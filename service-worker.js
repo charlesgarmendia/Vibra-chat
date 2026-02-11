@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vibra-chat-v3.0';
+const CACHE_NAME = 'vibra-chat-v3.1';
 const urlsToCache = [
     '/',
     '/index.html',
