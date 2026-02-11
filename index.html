@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibra Chat - Chat en Tiempo Real</title>
+    
+    <!-- Manifest PWA -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0a0a0a">
+    <meta name="description" content="Vibra Chat - Conecta y chatea en tiempo real">
+    
+    <!-- Íconos PWA -->
+    <link rel="icon" href="/icons/vibra-192.png" sizes="192x192">
+    <link rel="apple-touch-icon" href="/icons/vibra-192.png">
+    
+    <!-- Estilos -->
+    <link rel="stylesheet" href="/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Scripts esenciales -->
+    <script type="module" src="/firebase-config.js"></script>
+    <script src="/monetag-integration.js"></script>
+</head>
+<body>
+    <!-- App Container -->
+    <div id="app">
+        <!-- Login Screen -->
+        <div id="loginScreen" class="screen active">
+            <!-- ... contenido login ... -->
+        </div>
+        
+        <!-- Main App -->
+        <div id="appScreen" class="screen">
+            <!-- Header, Sidebar, Chat, etc. -->
+        </div>
+        
+        <!-- Loader Global -->
+        <div id="globalLoader" class="global-loader" style="display: none;">
+            <div class="loader-spinner"></div>
+            <p>Cargando...</p>
+        </div>
+        
+        <!-- Notifications Container -->
+        <div id="notificationsContainer"></div>
+    </div>
+    
+    <!-- Scripts de la app -->
+    <script type="module" src="/app.js"></script>
+    <script>
+        // Registrar Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(reg => console.log('SW registrado:', reg))
+                    .catch(err => console.log('Error SW:', err));
+            });
+        }
+        
+        // Detectar instalación PWA
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            window.deferredPrompt = e;
+            
+            // Mostrar botón de instalación
+            showInstallButton();
+        });
+        
+        function showInstallButton() {
+            const installBtn = document.createElement('button');
+            installBtn.id = 'installBtn';
+            installBtn.className = 'install-btn';
+            installBtn.innerHTML = '<i class="fas fa-download"></i> Instalar App';
+            
+            installBtn.onclick = async () => {
+                if (window.deferredPrompt) {
+                    window.deferredPrompt.prompt();
+                    const { outcome } = await window.deferredPrompt.userChoice;
+                    console.log(`Instalación: ${outcome}`);
+                    window.deferredPrompt = null;
+                    installBtn.remove();
+                }
+            };
+            
+            document.body.appendChild(installBtn);
+        }
+    </script>
+</body>
+</html>
