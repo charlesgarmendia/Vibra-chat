@@ -300,12 +300,18 @@
     <script src="/monetag-integration.js"></script>
     <script type="module" src="app.js"></script>
     <script>
-        // Registrar Service Worker
+        // ===== REGISTRO DE SERVICE WORKERS (UN SOLO BLOQUE) =====
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
+                // 1. Service Worker principal de la app (caché)
                 navigator.serviceWorker.register('/service-worker.js')
-                    .then(reg => console.log('SW registrado:', reg))
-                    .catch(err => console.log('Error SW:', err));
+                    .then(reg => console.log('✅ SW principal registrado:', reg))
+                    .catch(err => console.log('❌ Error SW principal:', err));
+                
+                // 2. Service Worker de Firebase Messaging (para notificaciones push)
+                navigator.serviceWorker.register('/firebase-messaging-sw.js')
+                    .then(reg => console.log('✅ Firebase Messaging SW registrado:', reg))
+                    .catch(err => console.log('❌ Error Firebase SW:', err));
             });
         }
         
@@ -313,8 +319,6 @@
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             window.deferredPrompt = e;
-            
-            // Mostrar botón de instalación
             showInstallButton();
         });
         

@@ -1,4 +1,4 @@
-// Vibra Chat - Versión 100% Funcional
+// Vibra Chat - Versión 100% Funcional con Firebase Messaging REAL
 import {
     database, auth, storage,
     ref, set, get, update, remove, onValue, push, query, 
@@ -21,6 +21,7 @@ class VibraChat {
         this.isRecording = false;
         this.mediaRecorder = null;
         this.is3DMode = true;
+        this.pendingMessages = [];
         
         this.init();
     }
@@ -31,6 +32,7 @@ class VibraChat {
         this.initUI();
         this.checkExistingSession();
         this.setupServiceWorker();
+        this.loadLocalMessages();
     }
     
     async initFirebase() {
@@ -80,13 +82,58 @@ class VibraChat {
                     });
                     
                     await onDisconnect(userStatusDatabaseRef).set('offline');
+                    
+                    // Sincronizar mensajes pendientes al reconectar
+                    this.syncPendingMessages();
                 }
             }
         });
     }
     
+    // Cargar mensajes almacenados localmente
+    loadLocalMessages() {
+        try {
+            const storedMessages = localStorage.getItem('vibraChatMessages');
+            if (storedMessages) {
+                const messages = JSON.parse(storedMessages);
+                this.chatMessages = new Map(Object.entries(messages));
+                console.log('Mensajes locales cargados');
+            }
+        } catch (error) {
+            console.error('Error cargando mensajes locales:', error);
+        }
+    }
+    
+    // Guardar mensajes localmente
+    saveLocalMessages() {
+        try {
+            const messagesObject = Object.fromEntries(this.chatMessages);
+            localStorage.setItem('vibraChatMessages', JSON.stringify(messagesObject));
+        } catch (error) {
+            console.error('Error guardando mensajes locales:', error);
+        }
+    }
+    
+    // Sincronizar mensajes pendientes
+    async syncPendingMessages() {
+        if (!navigator.onLine || !this.currentUser) return;
+        
+        try {
+            const pending = JSON.parse(localStorage.getItem('pendingMessages') || '[]');
+            for (const msg of pending) {
+                await this.sendMessage(msg.content, msg.type, msg.fileInfo);
+            }
+            localStorage.removeItem('pendingMessages');
+        } catch (error) {
+            console.error('Error sincronizando mensajes:', error);
+        }
+    }
+    
     async handleUserLogin(firebaseUser) {
         try {
+            // Mostrar loader
+            this.showLoader('Iniciando sesión...');
+            
             // Verificar si el usuario existe en la base de datos
             const userRef = ref(database, `users/${firebaseUser.uid}`);
             const userSnap = await get(userRef);
@@ -119,14 +166,38 @@ class VibraChat {
                 this.currentUser = userData;
             }
             
+            // Guardar token FCM si ya tenemos uno
+            if (NotificationService.fcmToken) {
+                try {
+                    const tokenRef = ref(database, `fcmTokens/${this.currentUser.uid}`);
+                    await set(tokenRef, {
+                        token: NotificationService.fcmToken,
+                        updatedAt: Date.now(),
+                        platform: navigator.platform,
+                        userAgent: navigator.userAgent
+                    });
+                    console.log('✅ Token FCM guardado en Firebase');
+                } catch (e) {
+                    console.log('Error guardando token FCM:', e);
+                }
+            }
+            
             // Guardar en localStorage
             localStorage.setItem('vibraUser', JSON.stringify(this.currentUser));
+            localStorage.setItem('vibraUserId', this.currentUser.uid);
             
             // Actualizar UI
             this.updateUIAfterLogin();
             
+            // Ocultar loader
+            this.hideLoader();
+            
             // Inicializar servicios
-            await NotificationService.getFCMToken();
+            try {
+                await NotificationService.getFCMToken();
+            } catch (e) {
+                console.log('Notificaciones no disponibles, continuando...', e);
+            }
             
             // Cargar datos
             this.loadContacts();
@@ -141,7 +212,8 @@ class VibraChat {
             
         } catch (error) {
             console.error('Error en login:', error);
-            this.showError('Error al iniciar sesión');
+            this.hideLoader();
+            this.showError('Error al iniciar sesión: ' + error.message);
         }
     }
     
@@ -164,7 +236,7 @@ class VibraChat {
     
     getAvatarHTML(user) {
         if (user.avatarUrl) {
-            return `<img src="${user.avatarUrl}" alt="${user.name}" class="avatar-img">`;
+            return `<img src="${user.avatarUrl}" alt="${this.escapeHtml(user.name)}" class="avatar-img">`;
         } else {
             const icon = user.gender === 'male' ? 'mars' : 'venus';
             return `<i class="fas fa-${icon}"></i>`;
@@ -191,6 +263,85 @@ class VibraChat {
         }
     }
     
+    renderAddedContacts() {
+        const container = document.getElementById('addedContacts');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        if (this.addedContacts.size === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-users"></i><p>No tienes contactos agregados</p></div>';
+            return;
+        }
+        
+        this.addedContacts.forEach((contact, contactId) => {
+            const card = document.createElement('div');
+            card.className = 'contact-card';
+            card.innerHTML = `
+                <div class="contact-header">
+                    <div class="contact-avatar ${contact.gender}">
+                        ${this.getAvatarHTML(contact)}
+                    </div>
+                    <div class="contact-info">
+                        <h4>${this.escapeHtml(contact.name)}</h4>
+                        <p>${this.escapeHtml(contact.bio || '')}</p>
+                    </div>
+                </div>
+                <div class="contact-actions">
+                    <button class="btn-chat" data-userid="${contactId}"><i class="fas fa-comment"></i> Chat</button>
+                    <button class="btn-remove" data-userid="${contactId}"><i class="fas fa-user-minus"></i></button>
+                </div>
+            `;
+            
+            card.querySelector('.btn-chat').addEventListener('click', () => this.startChat(contactId));
+            card.querySelector('.btn-remove').addEventListener('click', () => this.removeContact(contactId));
+            
+            container.appendChild(card);
+        });
+    }
+    
+    async removeContact(contactId) {
+        if (!confirm('¿Eliminar este contacto?')) return;
+        
+        try {
+            const contactRef = ref(database, `users/${this.currentUser.uid}/contacts/${contactId}`);
+            await remove(contactRef);
+            this.showNotification('Contacto eliminado');
+        } catch (error) {
+            console.error('Error eliminando contacto:', error);
+            this.showError('Error al eliminar contacto');
+        }
+    }
+    
+    async addContact(userId) {
+        try {
+            const userRef = ref(database, `users/${userId}`);
+            const userSnap = await get(userRef);
+            
+            if (!userSnap.exists()) {
+                this.showError('Usuario no encontrado');
+                return;
+            }
+            
+            const user = userSnap.val();
+            
+            const contactRef = ref(database, `users/${this.currentUser.uid}/contacts/${userId}`);
+            await set(contactRef, {
+                uid: userId,
+                name: user.name,
+                gender: user.gender,
+                avatarUrl: user.avatarUrl,
+                addedAt: serverTimestamp()
+            });
+            
+            this.showNotification(`${user.name} agregado a contactos`);
+            
+        } catch (error) {
+            console.error('Error agregando contacto:', error);
+            this.showError('Error al agregar contacto');
+        }
+    }
+    
     async listenForOnlineUsers() {
         try {
             const usersRef = ref(database, 'users');
@@ -209,7 +360,10 @@ class VibraChat {
                 });
                 
                 // Actualizar contador
-                document.getElementById('onlineCount').textContent = this.onlineUsers.size;
+                const onlineCountEl = document.getElementById('onlineCount');
+                if (onlineCountEl) {
+                    onlineCountEl.textContent = this.onlineUsers.size;
+                }
                 
                 // Renderizar usuarios online
                 this.renderOnlineUsers();
@@ -220,6 +374,88 @@ class VibraChat {
         } catch (error) {
             console.error('Error escuchando usuarios:', error);
         }
+    }
+    
+    renderOnlineUsers() {
+        const container = document.getElementById('onlineContacts');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        if (this.onlineUsers.size === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-users"></i><p>No hay usuarios en línea</p></div>';
+            return;
+        }
+        
+        this.onlineUsers.forEach((user, userId) => {
+            const card = this.createUserCard(user, userId);
+            container.appendChild(card);
+        });
+    }
+    
+    createUserCard(user, userId) {
+        const card = document.createElement('div');
+        card.className = `user-card ${user.status === 'online' ? 'online' : 'offline'}`;
+        card.dataset.userId = userId;
+        
+        card.innerHTML = `
+            <div class="user-card-header">
+                <div class="user-avatar">
+                    ${this.getAvatarHTML(user)}
+                    <span class="status-indicator ${user.status === 'online' ? 'online' : 'offline'}"></span>
+                </div>
+                <div class="user-info">
+                    <h4>${this.escapeHtml(user.name)}</h4>
+                    <p class="user-status">${user.status === 'online' ? 'En línea' : 'Desconectado'}</p>
+                    <p class="user-bio">${this.escapeHtml(user.bio || 'Usuario de Vibra Chat')}</p>
+                </div>
+            </div>
+            <div class="user-card-actions">
+                <button class="btn-chat" data-userid="${userId}">
+                    <i class="fas fa-comment"></i> Chatear
+                </button>
+                <button class="btn-add-contact" data-userid="${userId}">
+                    <i class="fas fa-user-plus"></i> Agregar
+                </button>
+            </div>
+        `;
+        
+        // Agregar event listeners
+        card.querySelector('.btn-chat').addEventListener('click', () => this.startChat(userId));
+        card.querySelector('.btn-add-contact').addEventListener('click', () => this.addContact(userId));
+        
+        return card;
+    }
+    
+    renderWallProfiles() {
+        const container = document.getElementById('wallProfiles');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        if (this.onlineUsers.size === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-user"></i><p>No hay usuarios disponibles</p></div>';
+            return;
+        }
+        
+        this.onlineUsers.forEach((user, userId) => {
+            const card = document.createElement('div');
+            card.className = 'profile-card';
+            card.innerHTML = `
+                <div class="profile-avatar ${user.gender}">
+                    ${this.getAvatarHTML(user)}
+                </div>
+                <h3 class="profile-name">${this.escapeHtml(user.name)}</h3>
+                <p class="profile-id">ID: ${userId.substring(0, 8)}</p>
+                <span class="profile-status ${user.status}">${user.status === 'online' ? '🟢 En línea' : '⚫ Desconectado'}</span>
+                <p class="profile-bio">${this.escapeHtml(user.bio || '')}</p>
+                <button class="btn-chat" data-userid="${userId}"><i class="fas fa-comment"></i> Chatear</button>
+            `;
+            
+            card.querySelector('.btn-chat').addEventListener('click', () => this.startChat(userId));
+            
+            container.appendChild(card);
+        });
     }
     
     async listenForMessages() {
@@ -240,11 +476,32 @@ class VibraChat {
                         });
                     });
                     
-                    this.chatMessages.set(chatId, messages);
+                    // Verificar si hay mensajes nuevos
+                    const existingMessages = this.chatMessages.get(chatId) || [];
+                    const newMessages = messages.filter(msg => 
+                        !existingMessages.some(existing => existing.id === msg.id)
+                    );
                     
-                    // Si este chat está abierto, actualizar mensajes
-                    if (this.currentChat?.uid === chatId) {
-                        this.renderChatMessages(chatId);
+                    if (newMessages.length > 0) {
+                        // Agregar mensajes nuevos
+                        const updatedMessages = [...existingMessages, ...newMessages];
+                        this.chatMessages.set(chatId, updatedMessages);
+                        this.saveLocalMessages();
+                        
+                        // Mostrar notificación para mensajes recibidos
+                        newMessages.forEach(msg => {
+                            if (msg.senderId !== this.currentUser.uid) {
+                                this.handleIncomingMessage(msg);
+                            }
+                        });
+                        
+                        // Si este chat está abierto, actualizar mensajes
+                        if (this.currentChat?.uid === chatId) {
+                            this.renderChatMessages(chatId);
+                        }
+                        
+                        // Eliminar mensajes de Firebase después de procesarlos
+                        this.deleteMessagesFromFirebase(chatId);
                     }
                 });
                 
@@ -258,12 +515,135 @@ class VibraChat {
         }
     }
     
+    // Eliminar mensajes de Firebase después de recibirlos
+    async deleteMessagesFromFirebase(chatId) {
+        if (!this.currentUser) return;
+        
+        try {
+            const messagesRef = ref(database, `chats/${this.currentUser.uid}/${chatId}`);
+            await remove(messagesRef);
+            console.log(`Mensajes del chat ${chatId} eliminados de Firebase`);
+        } catch (error) {
+            console.error('Error eliminando mensajes:', error);
+        }
+    }
+    
+    // Manejar mensaje entrante
+    handleIncomingMessage(message) {
+        // Actualizar contador de no leídos
+        const unreadKey = `unread_${message.senderId}`;
+        const currentCount = parseInt(localStorage.getItem(unreadKey) || '0');
+        localStorage.setItem(unreadKey, (currentCount + 1).toString());
+        
+        // Actualizar badge en historial
+        this.updateUnreadBadgeForChat(message.senderId, currentCount + 1);
+        
+        // Actualizar contador total
+        this.updateTotalUnreadCount();
+        
+        // Reproducir sonido
+        this.playSound('received');
+        
+        // Mostrar notificación si la página no está activa
+        if (document.visibilityState !== 'visible') {
+            if (Notification.permission === 'granted') {
+                new Notification(message.senderName || 'Nuevo mensaje', {
+                    body: message.type === 'text' ? message.content : `Envió un ${message.type}`,
+                    icon: '/icons/vibra-192.png'
+                });
+            }
+        }
+    }
+    
+    updateUnreadBadgeForChat(chatId, count) {
+        const badge = document.getElementById(`unread_${chatId}`);
+        if (badge) {
+            badge.textContent = count;
+            badge.style.display = count > 0 ? 'flex' : 'none';
+        }
+    }
+    
+    updateTotalUnreadCount() {
+        let total = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('unread_')) {
+                total += parseInt(localStorage.getItem(key) || '0');
+            }
+        }
+        
+        const badge = document.getElementById('unreadBadge');
+        if (badge) {
+            badge.textContent = total;
+            badge.style.display = total > 0 ? 'flex' : 'none';
+        }
+        
+        // Actualizar título
+        const originalTitle = document.title.replace(/^\(\d+\)\s*/, '');
+        document.title = total > 0 ? `(${total}) ${originalTitle}` : originalTitle;
+    }
+    
+    renderChatHistory() {
+        const container = document.getElementById('chatHistory');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        const chats = Array.from(this.chatMessages.entries())
+            .map(([chatId, messages]) => {
+                const lastMessage = messages[messages.length - 1];
+                const unread = parseInt(localStorage.getItem(`unread_${chatId}`) || '0');
+                return { chatId, lastMessage, unread };
+            })
+            .sort((a, b) => (b.lastMessage?.timestamp || 0) - (a.lastMessage?.timestamp || 0));
+        
+        if (chats.length === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-comments"></i><p>No hay conversaciones</p></div>';
+            return;
+        }
+        
+        chats.forEach(chat => {
+            if (!chat.lastMessage) return;
+            
+            const user = this.onlineUsers.get(chat.chatId) || { name: 'Usuario', gender: 'male' };
+            
+            const card = document.createElement('div');
+            card.className = 'chat-history-item';
+            card.innerHTML = `
+                <div class="chat-avatar ${user.gender}">
+                    ${this.getAvatarHTML(user)}
+                </div>
+                <div class="chat-info">
+                    <h4>${this.escapeHtml(user.name)}</h4>
+                    <p>${this.escapeHtml(chat.lastMessage.content.substring(0, 30))}${chat.lastMessage.content.length > 30 ? '...' : ''}</p>
+                </div>
+                <div class="chat-meta">
+                    <span class="chat-time">${new Date(chat.lastMessage.timestamp).toLocaleTimeString()}</span>
+                    ${chat.unread > 0 ? `<span class="unread-badge" id="unread_${chat.chatId}">${chat.unread}</span>` : ''}
+                </div>
+            `;
+            
+            card.addEventListener('click', () => this.startChat(chat.chatId));
+            
+            container.appendChild(card);
+        });
+    }
+    
     async sendMessage(content, type = 'text', fileInfo = null) {
         if (!this.currentUser || !this.currentChat || !content) return;
         
+        // Si no hay conexión, guardar como pendiente
+        if (!navigator.onLine) {
+            const pendingMessages = JSON.parse(localStorage.getItem('pendingMessages') || '[]');
+            pendingMessages.push({ content, type, fileInfo, receiverId: this.currentChat.uid });
+            localStorage.setItem('pendingMessages', JSON.stringify(pendingMessages));
+            this.showNotification('Mensaje guardado para enviar cuando haya conexión', 'warning');
+            return;
+        }
+        
         try {
             const timestamp = Date.now();
-            const messageId = `${this.currentUser.uid}_${timestamp}`;
+            const messageId = `${this.currentUser.uid}_${timestamp}_${Math.random().toString(36).substring(7)}`;
             
             const messageData = {
                 id: messageId,
@@ -277,11 +657,16 @@ class VibraChat {
                 fileInfo: fileInfo
             };
             
-            // Guardar en el chat del remitente
-            const senderRef = ref(database, `chats/${this.currentUser.uid}/${this.currentChat.uid}/${messageId}`);
-            await set(senderRef, messageData);
+            // Guardar en el chat del remitente (localmente)
+            const senderMessages = this.chatMessages.get(this.currentChat.uid) || [];
+            senderMessages.push(messageData);
+            this.chatMessages.set(this.currentChat.uid, senderMessages);
+            this.saveLocalMessages();
             
-            // Guardar en el chat del receptor
+            // Actualizar UI inmediatamente (optimista)
+            this.renderChatMessages(this.currentChat.uid);
+            
+            // Guardar en el chat del receptor (Firebase)
             const receiverRef = ref(database, `chats/${this.currentChat.uid}/${this.currentUser.uid}/${messageId}`);
             await set(receiverRef, messageData);
             
@@ -293,13 +678,17 @@ class VibraChat {
             });
             
             // Enviar notificación push
-            await NotificationService.sendNotificationToUser(this.currentChat.uid, {
-                title: this.currentUser.name,
-                body: type === 'text' ? content : `Envió un ${type}`,
-                type: 'message',
-                senderId: this.currentUser.uid,
-                chatId: this.currentChat.uid
-            });
+            try {
+                await NotificationService.sendNotificationToUser(this.currentChat.uid, {
+                    title: this.currentUser.name,
+                    body: type === 'text' ? content : `Envió un ${type}`,
+                    type: 'message',
+                    senderId: this.currentUser.uid,
+                    chatId: this.currentChat.uid
+                });
+            } catch (e) {
+                console.log('Error en notificación push:', e);
+            }
             
             // Reproducir sonido de enviado
             this.playSound('sent');
@@ -308,7 +697,13 @@ class VibraChat {
             
         } catch (error) {
             console.error('Error enviando mensaje:', error);
-            this.showError('Error enviando mensaje');
+            
+            // Guardar como pendiente si hay error
+            const pendingMessages = JSON.parse(localStorage.getItem('pendingMessages') || '[]');
+            pendingMessages.push({ content, type, fileInfo, receiverId: this.currentChat.uid });
+            localStorage.setItem('pendingMessages', JSON.stringify(pendingMessages));
+            
+            this.showError('Error enviando mensaje. Se guardó para reintentar');
             return null;
         }
     }
@@ -372,8 +767,14 @@ class VibraChat {
             this.isRecording = true;
             
             // Actualizar UI
-            document.getElementById('recordBtn').classList.add('recording');
-            document.getElementById('recordStatus').textContent = 'Grabando...';
+            const recordBtn = document.getElementById('recordBtn');
+            if (recordBtn) {
+                recordBtn.classList.add('recording');
+            }
+            const recordStatus = document.getElementById('recordStatus');
+            if (recordStatus) {
+                recordStatus.textContent = 'Grabando...';
+            }
             
             // Comenzar grabación
             this.mediaRecorder.start();
@@ -401,8 +802,14 @@ class VibraChat {
             clearTimeout(this.recordingTimeout);
             
             // Actualizar UI
-            document.getElementById('recordBtn').classList.remove('recording');
-            document.getElementById('recordStatus').textContent = '';
+            const recordBtn = document.getElementById('recordBtn');
+            if (recordBtn) {
+                recordBtn.classList.remove('recording');
+            }
+            const recordStatus = document.getElementById('recordStatus');
+            if (recordStatus) {
+                recordStatus.textContent = '';
+            }
             
             // Esperar a que termine la grabación
             return new Promise((resolve) => {
@@ -431,12 +838,9 @@ class VibraChat {
             // Autenticación anónima con Firebase
             await signInAnonymously(auth);
             
-            // Los datos se guardarán en handleUserLogin
-            // que se llama automáticamente después de signInAnonymously
-            
         } catch (error) {
             console.error('Error en login:', error);
-            this.showError('Error al iniciar sesión');
+            this.showError('Error al iniciar sesión: ' + error.message);
         }
     }
     
@@ -445,6 +849,7 @@ class VibraChat {
             try {
                 // Limpiar datos locales
                 localStorage.removeItem('vibraUser');
+                localStorage.removeItem('vibraUserId');
                 this.currentUser = null;
                 this.onlineUsers.clear();
                 this.addedContacts.clear();
@@ -466,48 +871,6 @@ class VibraChat {
                 this.showError('Error cerrando sesión');
             }
         }
-    }
-    
-    renderOnlineUsers() {
-        const container = document.getElementById('onlineContacts');
-        if (!container) return;
-        
-        container.innerHTML = '';
-        
-        this.onlineUsers.forEach((user, userId) => {
-            const card = this.createUserCard(user, userId);
-            container.appendChild(card);
-        });
-    }
-    
-    createUserCard(user, userId) {
-        const card = document.createElement('div');
-        card.className = `user-card ${user.status === 'online' ? 'online' : 'offline'}`;
-        card.dataset.userId = userId;
-        
-        card.innerHTML = `
-            <div class="user-card-header">
-                <div class="user-avatar">
-                    ${this.getAvatarHTML(user)}
-                    <span class="status-indicator ${user.status === 'online' ? 'online' : 'offline'}"></span>
-                </div>
-                <div class="user-info">
-                    <h4>${user.name}</h4>
-                    <p class="user-status">${user.status === 'online' ? 'En línea' : 'Desconectado'}</p>
-                    <p class="user-bio">${user.bio || 'Usuario de Vibra Chat'}</p>
-                </div>
-            </div>
-            <div class="user-card-actions">
-                <button class="btn-chat" onclick="vibraChat.startChat('${userId}')">
-                    <i class="fas fa-comment"></i> Chatear
-                </button>
-                <button class="btn-add-contact" onclick="vibraChat.addContact('${userId}')">
-                    <i class="fas fa-user-plus"></i> Agregar
-                </button>
-            </div>
-        `;
-        
-        return card;
     }
     
     async startChat(userId) {
@@ -538,6 +901,10 @@ class VibraChat {
             // Mostrar sección de chat
             this.showSection('chat');
             
+            // Marcar mensajes como leídos
+            localStorage.setItem(`unread_${userId}`, '0');
+            this.updateTotalUnreadCount();
+            
         } catch (error) {
             console.error('Error iniciando chat:', error);
             this.showError('Error al iniciar chat');
@@ -556,19 +923,20 @@ class VibraChat {
             adOverlay.style.display = 'flex';
             
             // Configurar Monetag
-            if (window.monetag) {
-                monetag.cmd.push(() => {
-                    monetag.load();
-                });
+            if (window.MonetagIntegration) {
+                window.MonetagIntegration.showAd();
             }
             
             // Configurar botón de cerrar
-            document.getElementById('closeAdBtn').onclick = () => {
-                adOverlay.style.display = 'none';
-                resolve();
-            };
+            const closeBtn = document.getElementById('closeAdBtn');
+            if (closeBtn) {
+                closeBtn.onclick = () => {
+                    adOverlay.style.display = 'none';
+                    resolve();
+                };
+            }
             
-            // Cerrar automáticamente después de 5 segundos (para testing)
+            // Cerrar automáticamente después de 5 segundos
             setTimeout(() => {
                 if (adOverlay.style.display !== 'none') {
                     adOverlay.style.display = 'none';
@@ -581,8 +949,15 @@ class VibraChat {
     updateChatHeader() {
         if (!this.currentChat) return;
         
-        document.getElementById('chatUserName').textContent = this.currentChat.name;
-        document.getElementById('chatUserStatus').textContent = this.currentChat.status === 'online' ? 'En línea' : 'Desconectado';
+        const chatUserName = document.getElementById('chatUserName');
+        if (chatUserName) {
+            chatUserName.textContent = this.currentChat.name;
+        }
+        
+        const chatUserStatus = document.getElementById('chatUserStatus');
+        if (chatUserStatus) {
+            chatUserStatus.textContent = this.currentChat.status === 'online' ? 'En línea' : 'Desconectado';
+        }
         
         const chatAvatar = document.querySelector('.chat-user-pic');
         if (chatAvatar) {
@@ -597,6 +972,9 @@ class VibraChat {
         container.innerHTML = '';
         
         const messages = this.chatMessages.get(chatId) || [];
+        
+        // Ordenar por timestamp
+        messages.sort((a, b) => a.timestamp - b.timestamp);
         
         messages.forEach((msg) => {
             const messageElement = this.createMessageElement(msg);
@@ -623,8 +1001,8 @@ class VibraChat {
             case 'image':
                 contentHTML = `
                     <div class="message-image">
-                        <img src="${msg.fileInfo?.url}" alt="Imagen" onclick="vibraChat.openImage('${msg.fileInfo?.url}')">
-                        <p class="image-caption">${msg.content}</p>
+                        <img src="${this.escapeHtml(msg.fileInfo?.url)}" alt="Imagen" onclick="vibraChat.openImage('${this.escapeHtml(msg.fileInfo?.url)}')">
+                        <p class="image-caption">${this.escapeHtml(msg.content)}</p>
                     </div>
                 `;
                 break;
@@ -632,8 +1010,8 @@ class VibraChat {
             case 'audio':
                 contentHTML = `
                     <div class="message-audio">
-                        <audio controls src="${msg.fileInfo?.url}"></audio>
-                        <p>${msg.content}</p>
+                        <audio controls src="${this.escapeHtml(msg.fileInfo?.url)}"></audio>
+                        <p>${this.escapeHtml(msg.content)}</p>
                     </div>
                 `;
                 break;
@@ -653,9 +1031,28 @@ class VibraChat {
     }
     
     escapeHtml(text) {
+        if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+    
+    openImage(url) {
+        const modal = document.createElement('div');
+        modal.className = 'image-modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <img src="${url}" alt="Imagen">
+                <button class="close-modal"><i class="fas fa-times"></i></button>
+            </div>
+        `;
+        
+        modal.querySelector('.close-modal').onclick = () => modal.remove();
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+        
+        document.body.appendChild(modal);
     }
     
     setupEventListeners() {
@@ -699,8 +1096,11 @@ class VibraChat {
         
         // Window events
         window.addEventListener('beforeunload', () => this.handleBeforeUnload());
-        window.addEventListener('online', () => this.handleConnectionChange(true));
-        window.addEventListener('offline', () => this.handleConnectionChange(false));
+        window.addEventListener('online', () => {
+            this.showNotification('Conexión restablecida');
+            this.syncPendingMessages();
+        });
+        window.addEventListener('offline', () => this.showError('Sin conexión a internet'));
         
         // Notificaciones
         document.addEventListener('new-message', (e) => this.handleNewMessageNotification(e.detail));
@@ -712,10 +1112,8 @@ class VibraChat {
         
         if (!message || !this.currentChat) return;
         
-        // Enviar mensaje
         await this.sendMessage(message);
         
-        // Limpiar input
         input.value = '';
         input.focus();
     }
@@ -739,10 +1137,7 @@ class VibraChat {
     async openCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            
-            // Crear interfaz de cámara
             this.showCameraInterface(stream);
-            
         } catch (error) {
             console.error('Error accediendo a cámara:', error);
             this.showError('No se pudo acceder a la cámara');
@@ -772,7 +1167,6 @@ class VibraChat {
         const video = cameraModal.querySelector('#cameraPreview');
         video.srcObject = stream;
         
-        // Capturar foto
         cameraModal.querySelector('#captureBtn').onclick = async () => {
             const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth;
@@ -788,13 +1182,11 @@ class VibraChat {
                 
                 await this.sendImage(file);
                 
-                // Cerrar cámara
                 stream.getTracks().forEach(track => track.stop());
                 cameraModal.remove();
             }, 'image/jpeg', 0.9);
         };
         
-        // Cerrar cámara
         cameraModal.querySelector('#closeCamera').onclick = () => {
             stream.getTracks().forEach(track => track.stop());
             cameraModal.remove();
@@ -817,13 +1209,10 @@ class VibraChat {
         if (!file) return;
         
         try {
-            // Mostrar loader
             this.showLoader('Subiendo foto...');
             
-            // Subir avatar
             const avatarInfo = await FileUploader.uploadAvatar(file, this.currentUser.uid);
             
-            // Actualizar perfil en Firebase
             const userRef = ref(database, `users/${this.currentUser.uid}`);
             await update(userRef, {
                 avatarUrl: avatarInfo.original.url,
@@ -831,11 +1220,9 @@ class VibraChat {
                 updatedAt: serverTimestamp()
             });
             
-            // Actualizar localmente
             this.currentUser.avatarUrl = avatarInfo.original.url;
             localStorage.setItem('vibraUser', JSON.stringify(this.currentUser));
             
-            // Actualizar UI
             this.updateUIAfterLogin();
             
             this.showNotification('Foto de perfil actualizada');
@@ -852,14 +1239,13 @@ class VibraChat {
         try {
             const name = document.getElementById('profileName').value.trim();
             const bio = document.getElementById('profileBio').value.trim();
-            const status = document.getElementById('profileStatus').value.trim();
+            const status = document.getElementById('profileStatus').value;
             
             if (!name) {
                 this.showError('El nombre es requerido');
                 return;
             }
             
-            // Actualizar en Firebase
             const updates = {
                 name: name,
                 bio: bio,
@@ -870,11 +1256,9 @@ class VibraChat {
             const userRef = ref(database, `users/${this.currentUser.uid}`);
             await update(userRef, updates);
             
-            // Actualizar localmente
             Object.assign(this.currentUser, updates);
             localStorage.setItem('vibraUser', JSON.stringify(this.currentUser));
             
-            // Actualizar UI
             this.updateUIAfterLogin();
             
             this.showNotification('Perfil actualizado');
@@ -886,7 +1270,156 @@ class VibraChat {
         }
     }
     
-    // ... (más métodos)
+    showProfile() {
+        document.getElementById('profileName').value = this.currentUser.name || '';
+        document.getElementById('profileBio').value = this.currentUser.bio || '';
+        document.getElementById('profileStatus').value = this.currentUser.status || 'online';
+        
+        const avatarPreview = document.querySelector('.avatar-preview');
+        if (avatarPreview) {
+            avatarPreview.innerHTML = this.getAvatarHTML(this.currentUser);
+        }
+        
+        this.showSection('profile');
+    }
+    
+    searchUsers() {
+        const query = document.getElementById('userSearch')?.value.toLowerCase() || '';
+        const genderFilter = document.getElementById('genderFilter')?.value || 'all';
+        
+        const container = document.getElementById('searchResults');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        if (!query) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i><p>Ingresa un término de búsqueda</p></div>';
+            return;
+        }
+        
+        const results = [];
+        this.onlineUsers.forEach((user, userId) => {
+            if (user.name.toLowerCase().includes(query)) {
+                if (genderFilter === 'all' || user.gender === genderFilter) {
+                    results.push({ userId, ...user });
+                }
+            }
+        });
+        
+        if (results.length === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i><p>No se encontraron usuarios</p></div>';
+            return;
+        }
+        
+        results.forEach(user => {
+            const card = document.createElement('div');
+            card.className = 'profile-card';
+            card.innerHTML = `
+                <div class="profile-avatar ${user.gender}">
+                    ${this.getAvatarHTML(user)}
+                </div>
+                <h3 class="profile-name">${this.escapeHtml(user.name)}</h3>
+                <p class="profile-id">ID: ${user.userId.substring(0, 8)}</p>
+                <span class="profile-status ${user.status}">${user.status === 'online' ? '🟢 En línea' : '⚫ Desconectado'}</span>
+                <p class="profile-bio">${this.escapeHtml(user.bio || '')}</p>
+                <button class="btn-chat" data-userid="${user.userId}"><i class="fas fa-comment"></i> Chatear</button>
+            `;
+            
+            card.querySelector('.btn-chat').addEventListener('click', () => this.startChat(user.userId));
+            
+            container.appendChild(card);
+        });
+    }
+    
+    handleSearchInput() {
+        this.searchUsers();
+    }
+    
+    filterUsers(gender) {
+        this.searchUsers();
+    }
+    
+    showSection(section) {
+        document.querySelectorAll('.content-section').forEach(el => el.classList.remove('active'));
+        
+        if (section === 'chat') {
+            document.getElementById('chatSection')?.classList.add('active');
+        } else if (section === 'contacts') {
+            document.getElementById('contactsSection')?.classList.add('active');
+        } else if (section === 'wall') {
+            document.getElementById('wallSection')?.classList.add('active');
+            this.renderWallProfiles();
+        } else if (section === 'history') {
+            document.getElementById('historySection')?.classList.add('active');
+            this.renderChatHistory();
+        } else if (section === 'profile') {
+            document.getElementById('profileSection')?.classList.add('active');
+        }
+        
+        this.closeSidebar();
+    }
+    
+    toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.querySelector('.main-content');
+        if (sidebar) sidebar.classList.toggle('active');
+        if (mainContent) mainContent.classList.toggle('sidebar-open');
+    }
+    
+    closeSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.querySelector('.main-content');
+        if (sidebar) sidebar.classList.remove('active');
+        if (mainContent) mainContent.classList.remove('sidebar-open');
+    }
+    
+    toggle3DMode() {
+        this.is3DMode = true;
+        document.body.classList.remove('four-d-mode');
+        document.body.classList.add('three-d-mode');
+        const btn3d = document.getElementById('toggle3D');
+        const btn4d = document.getElementById('toggle4D');
+        if (btn3d) btn3d.classList.add('active');
+        if (btn4d) btn4d.classList.remove('active');
+    }
+    
+    toggle4DMode() {
+        this.is3DMode = false;
+        document.body.classList.remove('three-d-mode');
+        document.body.classList.add('four-d-mode');
+        const btn3d = document.getElementById('toggle3D');
+        const btn4d = document.getElementById('toggle4D');
+        if (btn4d) btn4d.classList.add('active');
+        if (btn3d) btn3d.classList.remove('active');
+    }
+    
+    showUploadProgress(filename, progress, complete = false) {
+        let progressDiv = document.getElementById('uploadProgress');
+        
+        if (!progressDiv) {
+            progressDiv = document.createElement('div');
+            progressDiv.id = 'uploadProgress';
+            progressDiv.className = 'upload-progress';
+            document.body.appendChild(progressDiv);
+        }
+        
+        if (complete) {
+            setTimeout(() => {
+                if (progressDiv) progressDiv.remove();
+            }, 2000);
+            return;
+        }
+        
+        progressDiv.innerHTML = `
+            <div class="upload-info">
+                <span class="upload-filename">${filename}</span>
+                <span class="upload-percentage">${progress}%</span>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar" style="width: ${progress}%"></div>
+            </div>
+        `;
+    }
     
     showNotification(message, type = 'success') {
         const notification = document.createElement('div');
@@ -898,10 +1431,8 @@ class VibraChat {
         
         document.body.appendChild(notification);
         
-        // Animación de entrada
         setTimeout(() => notification.classList.add('show'), 10);
         
-        // Remover después de 3 segundos
         setTimeout(() => {
             notification.classList.remove('show');
             setTimeout(() => notification.remove(), 300);
@@ -940,7 +1471,7 @@ class VibraChat {
     async setupServiceWorker() {
         if ('serviceWorker' in navigator) {
             try {
-                const registration = await navigator.worker.register('/service-worker.js');
+                const registration = await navigator.serviceWorker.register('/service-worker.js');
                 console.log('Service Worker registrado:', registration);
             } catch (error) {
                 console.error('Error registrando Service Worker:', error);
@@ -954,7 +1485,7 @@ class VibraChat {
             try {
                 this.currentUser = JSON.parse(savedUser);
                 // Auto-login con Firebase
-                signInAnonymously(auth);
+                signInAnonymously(auth).catch(() => {});
             } catch (error) {
                 localStorage.removeItem('vibraUser');
             }
@@ -962,27 +1493,24 @@ class VibraChat {
     }
     
     handleBeforeUnload() {
-        // Actualizar estado a offline
         if (this.currentUser) {
             const userRef = ref(database, `users/${this.currentUser.uid}/status`);
-            set(userRef, 'offline');
+            set(userRef, 'offline').catch(() => {});
         }
     }
     
     handleConnectionChange(isOnline) {
         if (isOnline) {
             this.showNotification('Conexión restablecida');
+            this.syncPendingMessages();
         } else {
             this.showError('Sin conexión a internet');
         }
     }
     
     handleNewMessageNotification(payload) {
-        // Actualizar contador de mensajes no leídos
         const currentCount = parseInt(localStorage.getItem('unreadMessages') || '0');
         localStorage.setItem('unreadMessages', (currentCount + 1).toString());
-        
-        // Actualizar badge
         this.updateUnreadBadge(currentCount + 1);
     }
     

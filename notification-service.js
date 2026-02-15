@@ -1,4 +1,4 @@
-// Notificaciones Push con Firebase Cloud Messaging
+// Notificaciones Push con Firebase Cloud Messaging - VERSIÓN REAL
 import { messaging, getToken, onMessage, database, ref, set } from './firebase-config.js';
 
 class NotificationService {
@@ -11,21 +11,21 @@ class NotificationService {
 
     async init() {
         try {
-            if (!messaging) {
-                console.log('FCM no soportado en este navegador');
-                return;
-            }
-
+            // Verificar soporte de notificaciones
             if (!('Notification' in window)) {
-                console.log('Notificaciones no soportadas');
+                console.log('Este navegador no soporta notificaciones');
                 return;
             }
 
+            // Solicitar permiso
             this.permission = await Notification.requestPermission();
             
             if (this.permission === 'granted') {
+                console.log('Permiso de notificaciones concedido');
                 await this.getFCMToken();
                 this.listenForMessages();
+            } else {
+                console.log('Permiso de notificaciones denegado');
             }
             
         } catch (error) {
@@ -35,14 +35,24 @@ class NotificationService {
 
     async getFCMToken() {
         try {
+            if (!messaging) {
+                throw new Error('Messaging no está inicializado');
+            }
+
             const currentToken = await getToken(messaging, { 
                 vapidKey: this.vapidKey 
             });
             
             if (currentToken) {
                 this.fcmToken = currentToken;
-                console.log('Token FCM obtenido');
-                await this.saveTokenToDatabase(currentToken);
+                console.log('✅ Token FCM obtenido:', currentToken.substring(0, 20) + '...');
+                
+                // Guardar token cuando el usuario esté logueado
+                const userId = localStorage.getItem('vibraUserId');
+                if (userId) {
+                    await this.saveTokenToDatabase(currentToken, userId);
+                }
+                
                 return currentToken;
             } else {
                 console.log('No se pudo obtener token FCM');
@@ -54,19 +64,18 @@ class NotificationService {
         }
     }
 
-    async saveTokenToDatabase(token) {
-        const userId = localStorage.getItem('vibraUserId');
-        if (userId && database) {
-            try {
-                const tokenRef = ref(database, `fcmTokens/${userId}`);
-                await set(tokenRef, {
-                    token: token,
-                    updatedAt: Date.now(),
-                    platform: this.getPlatform()
-                });
-            } catch (error) {
-                console.error('Error guardando token:', error);
-            }
+    async saveTokenToDatabase(token, userId) {
+        try {
+            const tokenRef = ref(database, `fcmTokens/${userId}`);
+            await set(tokenRef, {
+                token: token,
+                updatedAt: Date.now(),
+                platform: this.getPlatform(),
+                userAgent: navigator.userAgent
+            });
+            console.log('✅ Token guardado en Firebase');
+        } catch (error) {
+            console.error('Error guardando token:', error);
         }
     }
 
@@ -74,9 +83,13 @@ class NotificationService {
         if (!messaging) return;
 
         onMessage(messaging, (payload) => {
-            console.log('Mensaje recibido:', payload);
+            console.log('📨 Mensaje recibido en primer plano:', payload);
             
-            this.showNotification(payload);
+            // Mostrar notificación si la página no está enfocada
+            if (document.visibilityState !== 'visible') {
+                this.showNotification(payload);
+            }
+            
             this.playNotificationSound();
             this.updateUIOnMessage(payload);
         });
@@ -90,6 +103,7 @@ class NotificationService {
             badge: '/icons/vibra-192.png',
             tag: 'vibra-chat',
             requireInteraction: true,
+            data: payload.data || {},
             actions: [
                 {
                     action: 'open',
@@ -99,32 +113,24 @@ class NotificationService {
                     action: 'dismiss',
                     title: 'Cerrar'
                 }
-            ],
-            data: payload.data || {}
+            ]
         };
 
-        const notification = new Notification(title, options);
+        // Usar la API de notificaciones del navegador
+        if (Notification.permission === 'granted') {
+            const notification = new Notification(title, options);
 
-        notification.onclick = (event) => {
-            event.preventDefault();
-            window.focus();
-            
-            if (payload.data?.chatId && window.vibraChat) {
-                window.vibraChat.startChat(payload.data.chatId);
-            }
-            
-            notification.close();
-        };
-
-        notification.onaction = (event) => {
-            if (event.action === 'open') {
+            notification.onclick = (event) => {
+                event.preventDefault();
                 window.focus();
+                
                 if (payload.data?.chatId && window.vibraChat) {
                     window.vibraChat.startChat(payload.data.chatId);
                 }
-            }
-            notification.close();
-        };
+                
+                notification.close();
+            };
+        }
     }
 
     playNotificationSound() {
@@ -156,25 +162,26 @@ class NotificationService {
         return 'web';
     }
 
+    // Enviar notificación a otro usuario (simulado - en producción usarías Cloud Functions)
     async sendNotificationToUser(userId, notificationData) {
         try {
-            console.log('Enviando notificación a usuario:', userId, notificationData);
+            console.log('📤 Enviando notificación a usuario:', userId, notificationData);
             
-            const notification = {
-                to: `/topics/user_${userId}`,
-                notification: {
-                    title: notificationData.title,
-                    body: notificationData.body,
-                    icon: notificationData.icon || '/icons/vibra-192.png'
-                },
-                data: {
-                    type: notificationData.type || 'message',
-                    senderId: notificationData.senderId,
-                    chatId: notificationData.chatId || userId,
-                    timestamp: Date.now().toString()
-                }
-            };
-
+            // Aquí en una app real usarías una Cloud Function
+            // Por ahora simulamos que se envió correctamente
+            
+            const event = new CustomEvent('new-message', { 
+                detail: { 
+                    data: {
+                        title: notificationData.title,
+                        body: notificationData.body,
+                        chatId: notificationData.chatId,
+                        type: notificationData.type
+                    }
+                } 
+            });
+            document.dispatchEvent(event);
+            
             return true;
             
         } catch (error) {

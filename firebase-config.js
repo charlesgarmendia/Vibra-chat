@@ -12,7 +12,7 @@ import {
     uploadBytesResumable, getDownloadURL, deleteObject 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 import { 
-    getMessaging, getToken, onMessage, isSupported 
+    getMessaging, getToken, onMessage 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
 
 // Configuración REAL de TU Firebase
@@ -31,12 +31,7 @@ const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
-let messaging = null;
-
-// Inicializar Messaging solo si está soportado
-if (isSupported()) {
-    messaging = getMessaging(app);
-}
+const messaging = getMessaging(app);
 
 export {
     app, database, auth, storage, messaging,
