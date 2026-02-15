@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vibra-chat-v3.3';
+const CACHE_NAME = 'vibra-chat-v3.4';
 const urlsToCache = [
     '/',
     '/index.html',
@@ -7,17 +7,13 @@ const urlsToCache = [
     '/firebase-config.js',
     '/upload-handler.js',
     '/notification-service.js',
+    '/monetag-integration.js',
     '/icons/vibra-192.png',
     '/icons/vibra-512.png',
     '/audio/message-sent.mp3',
     '/audio/message-received.mp3',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-    'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@400;500;700&display=swap',
-    'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js',
-    'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js',
-    'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js',
-    'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js',
-    'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js'
+    'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@400;500;700&display=swap'
 ];
 
 // Instalar
@@ -53,7 +49,8 @@ self.addEventListener('fetch', event => {
     // Ignorar solicitudes de Firebase y Monetag
     if (event.request.url.includes('firebase') || 
         event.request.url.includes('monetag') ||
-        event.request.url.includes('omg10.com')) {
+        event.request.url.includes('omg10.com') ||
+        event.request.url.includes('gstatic.com')) {
         return;
     }
     
@@ -76,15 +73,12 @@ self.addEventListener('fetch', event => {
                 }
                 
                 return fetch(event.request).then(response => {
-                    // Verificar si la respuesta es válida
                     if (!response || response.status !== 200 || response.type !== 'basic') {
                         return response;
                     }
                     
-                    // Clonar la respuesta
                     const responseToCache = response.clone();
                     
-                    // Agregar al cache
                     caches.open(CACHE_NAME)
                         .then(cache => {
                             cache.put(event.request, responseToCache);
@@ -94,12 +88,10 @@ self.addEventListener('fetch', event => {
                 });
             })
             .catch(() => {
-                // Si falla todo, devolver página offline
                 if (event.request.mode === 'navigate') {
                     return caches.match('/index.html');
                 }
                 
-                // Para imágenes, devolver placeholder
                 if (event.request.destination === 'image') {
                     return caches.match('/icons/vibra-192.png');
                 }
@@ -167,31 +159,10 @@ self.addEventListener('sync', event => {
 });
 
 async function syncMessages() {
-    // Sincronizar mensajes pendientes
-    const pendingMessages = await getPendingMessages();
-    
-    for (const message of pendingMessages) {
-        try {
-            await sendMessageToServer(message);
-            await removePendingMessage(message.id);
-        } catch (error) {
-            console.error('Error sincronizando mensaje:', error);
-        }
-    }
-}
-
-// Funciones auxiliares para sync
-async function getPendingMessages() {
-    // Implementar lógica para obtener mensajes pendientes
-    return [];
-}
-
-async function sendMessageToServer(message) {
-    // Implementar lógica para enviar mensaje
-    return Promise.resolve();
-}
-
-async function removePendingMessage(messageId) {
-    // Implementar lógica para eliminar mensaje pendiente
-    return Promise.resolve();
+    const clients = await self.clients.matchAll();
+    clients.forEach(client => {
+        client.postMessage({
+            type: 'SYNC_MESSAGES'
+        });
+    });
 }

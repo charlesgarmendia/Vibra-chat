@@ -1,5 +1,5 @@
 // Notificaciones Push con Firebase Cloud Messaging
-import { messaging, getToken, onMessage } from './firebase-config.js';
+import { messaging, getToken, onMessage, database, ref, set } from './firebase-config.js';
 
 class NotificationService {
     constructor() {
@@ -11,13 +11,16 @@ class NotificationService {
 
     async init() {
         try {
-            // Verificar compatibilidad
             if (!messaging) {
                 console.log('FCM no soportado en este navegador');
                 return;
             }
 
-            // Solicitar permiso
+            if (!('Notification' in window)) {
+                console.log('Notificaciones no soportadas');
+                return;
+            }
+
             this.permission = await Notification.requestPermission();
             
             if (this.permission === 'granted') {
@@ -38,11 +41,8 @@ class NotificationService {
             
             if (currentToken) {
                 this.fcmToken = currentToken;
-                console.log('Token FCM:', currentToken);
-                
-                // Guardar token en Firebase para este usuario
-                this.saveTokenToDatabase(currentToken);
-                
+                console.log('Token FCM obtenido');
+                await this.saveTokenToDatabase(currentToken);
                 return currentToken;
             } else {
                 console.log('No se pudo obtener token FCM');
@@ -55,12 +55,9 @@ class NotificationService {
     }
 
     async saveTokenToDatabase(token) {
-        // Guardar token en Firebase cuando el usuario inicie sesión
-        // Esto se debe llamar después del login
         const userId = localStorage.getItem('vibraUserId');
-        if (userId) {
+        if (userId && database) {
             try {
-                const { ref, set } = await import('./firebase-config.js');
                 const tokenRef = ref(database, `fcmTokens/${userId}`);
                 await set(tokenRef, {
                     token: token,
@@ -79,25 +76,19 @@ class NotificationService {
         onMessage(messaging, (payload) => {
             console.log('Mensaje recibido:', payload);
             
-            // Mostrar notificación
             this.showNotification(payload);
-            
-            // Reproducir sonido
             this.playNotificationSound();
-            
-            // Actualizar UI si es necesario
             this.updateUIOnMessage(payload);
         });
     }
 
     showNotification(payload) {
-        const { title, body, icon, click_action } = payload.notification || {};
-        
-        const notificationOptions = {
-            body: body || 'Nuevo mensaje en Vibra Chat',
-            icon: icon || '/icons/vibra-192.png',
+        const title = payload.notification?.title || payload.data?.title || 'Vibra Chat';
+        const options = {
+            body: payload.notification?.body || payload.data?.body || 'Nuevo mensaje',
+            icon: payload.notification?.icon || '/icons/vibra-192.png',
             badge: '/icons/vibra-192.png',
-            tag: 'vibra-chat-notification',
+            tag: 'vibra-chat',
             requireInteraction: true,
             actions: [
                 {
@@ -112,29 +103,24 @@ class NotificationService {
             data: payload.data || {}
         };
 
-        // Mostrar notificación
-        const notification = new Notification(title || 'Vibra Chat', notificationOptions);
+        const notification = new Notification(title, options);
 
-        // Manejar clic en notificación
         notification.onclick = (event) => {
             event.preventDefault();
+            window.focus();
             
-            if (click_action) {
-                window.open(click_action, '_blank');
-            } else {
-                window.focus();
+            if (payload.data?.chatId && window.vibraChat) {
+                window.vibraChat.startChat(payload.data.chatId);
             }
             
             notification.close();
         };
 
-        // Manejar acciones
         notification.onaction = (event) => {
             if (event.action === 'open') {
                 window.focus();
-                if (payload.data?.chatId) {
-                    // Navegar al chat específico
-                    window.location.hash = `#chat/${payload.data.chatId}`;
+                if (payload.data?.chatId && window.vibraChat) {
+                    window.vibraChat.startChat(payload.data.chatId);
                 }
             }
             notification.close();
@@ -144,27 +130,21 @@ class NotificationService {
     playNotificationSound() {
         const audio = new Audio('/audio/message-received.mp3');
         audio.volume = 0.3;
-        audio.play().catch(console.error);
+        audio.play().catch(() => {});
     }
 
     updateUIOnMessage(payload) {
-        // Actualizar contador de mensajes no leídos
-        if (payload.data?.type === 'message') {
-            const currentCount = parseInt(localStorage.getItem('unreadCount') || '0');
-            localStorage.setItem('unreadCount', (currentCount + 1).toString());
+        if (payload.data?.type === 'message' && payload.data?.chatId) {
+            const currentCount = parseInt(localStorage.getItem('unreadMessages') || '0');
+            localStorage.setItem('unreadMessages', (currentCount + 1).toString());
             
-            // Actualizar badge en el título
-            this.updateTitleBadge(currentCount + 1);
+            if (window.vibraChat) {
+                window.vibraChat.updateUnreadBadge(currentCount + 1);
+            }
             
-            // Emitir evento personalizado
             const event = new CustomEvent('new-message', { detail: payload });
             document.dispatchEvent(event);
         }
-    }
-
-    updateTitleBadge(count) {
-        const originalTitle = document.title.replace(/^\(\d+\)\s*/, '');
-        document.title = count > 0 ? `(${count}) ${originalTitle}` : originalTitle;
     }
 
     getPlatform() {
@@ -176,31 +156,25 @@ class NotificationService {
         return 'web';
     }
 
-    // Enviar notificación a otro usuario
     async sendNotificationToUser(userId, notificationData) {
         try {
-            // En producción, usarías Cloud Functions
-            // Para demo, simulamos el envío
+            console.log('Enviando notificación a usuario:', userId, notificationData);
             
             const notification = {
-                to: `/topics/user_${userId}`, // O usar token específico
+                to: `/topics/user_${userId}`,
                 notification: {
                     title: notificationData.title,
                     body: notificationData.body,
-                    icon: notificationData.icon || '/icons/vibra-192.png',
-                    click_action: notificationData.click_action || window.location.origin
+                    icon: notificationData.icon || '/icons/vibra-192.png'
                 },
                 data: {
                     type: notificationData.type || 'message',
                     senderId: notificationData.senderId,
-                    chatId: notificationData.chatId,
+                    chatId: notificationData.chatId || userId,
                     timestamp: Date.now().toString()
                 }
             };
 
-            console.log('Enviando notificación:', notification);
-            
-            // Aquí iría la llamada a tu backend o Cloud Function
             return true;
             
         } catch (error) {
@@ -209,10 +183,11 @@ class NotificationService {
         }
     }
 
-    // Limpiar notificaciones
     clearNotifications() {
-        localStorage.setItem('unreadCount', '0');
-        this.updateTitleBadge(0);
+        localStorage.setItem('unreadMessages', '0');
+        if (window.vibraChat) {
+            window.vibraChat.updateUnreadBadge(0);
+        }
     }
 }
 

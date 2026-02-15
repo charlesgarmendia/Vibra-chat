@@ -82,7 +82,6 @@ body {
     line-height: 1.6;
 }
 
-/* Marco dorado alrededor de toda la interfaz */
 body::before {
     content: '';
     position: fixed;
@@ -105,7 +104,6 @@ body::before {
     50% { opacity: 1; }
 }
 
-/* Fondo con gradiente animado */
 body::after {
     content: '';
     position: fixed;
@@ -380,6 +378,17 @@ a:hover {
     font-weight: 600;
 }
 
+.terms-text {
+    margin-top: 20px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.terms-text a {
+    color: var(--gold);
+}
+
 /* ==========================================================================
    BOTONES
    ========================================================================== */
@@ -488,6 +497,10 @@ a:hover {
     font-size: 0.9rem;
 }
 
+.btn-block {
+    width: 100%;
+}
+
 /* ==========================================================================
    HEADER DE LA APP
    ========================================================================== */
@@ -520,6 +533,18 @@ a:hover {
 
 .app-logo .gold-text {
     font-size: 1.8rem;
+}
+
+.online-indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-secondary);
+}
+
+.online-indicator i.online {
+    color: var(--online);
+    font-size: 0.8rem;
 }
 
 .user-avatar {
@@ -725,18 +750,17 @@ a:hover {
     gap: 20px;
 }
 
-.contact-card {
+.user-card {
     background: rgba(10, 10, 10, 0.9);
     border: 1px solid var(--gold);
     border-radius: var(--border-radius);
     padding: 20px;
     transition: var(--transition-normal);
-    cursor: pointer;
     position: relative;
     overflow: hidden;
 }
 
-.contact-card::before {
+.user-card::before {
     content: '';
     position: absolute;
     top: 0;
@@ -747,32 +771,32 @@ a:hover {
     transition: var(--transition-normal);
 }
 
-.contact-card:hover::before {
+.user-card:hover::before {
     left: 100%;
 }
 
-.contact-card:hover {
+.user-card:hover {
     transform: translateY(-5px);
     border-color: var(--gold-light);
     box-shadow: var(--shadow-heavy);
 }
 
-.contact-card.online {
+.user-card.online {
     border-left: 4px solid var(--online);
 }
 
-.contact-card.offline {
+.user-card.offline {
     border-left: 4px solid var(--offline);
 }
 
-.contact-header {
+.user-card-header {
     display: flex;
     align-items: center;
     gap: 15px;
     margin-bottom: 15px;
 }
 
-.contact-avatar {
+.user-avatar {
     position: relative;
     width: 60px;
     height: 60px;
@@ -784,54 +808,69 @@ a:hover {
     justify-content: center;
     font-size: 1.8rem;
     color: var(--gold);
-}
-
-.contact-avatar.male {
     background: rgba(65, 105, 225, 0.2);
 }
 
-.contact-avatar.female {
+.user-avatar.male {
+    background: rgba(65, 105, 225, 0.2);
+}
+
+.user-avatar.female {
     background: rgba(255, 105, 180, 0.2);
 }
 
-.contact-info h4 {
+.user-info h4 {
     color: var(--gold);
     margin-bottom: 5px;
     font-size: 1.1rem;
 }
 
-.contact-info p {
+.user-status {
     color: var(--text-secondary);
     font-size: 0.9rem;
     margin-bottom: 5px;
 }
 
-.contact-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 0.8rem;
-    padding: 3px 8px;
-    border-radius: 10px;
-    background: rgba(50, 205, 50, 0.1);
-    color: var(--online);
+.user-bio {
+    color: var(--text-muted);
+    font-size: 0.85rem;
 }
 
-.contact-status.offline {
-    background: rgba(255, 68, 68, 0.1);
-    color: var(--offline);
-}
-
-.contact-actions {
+.user-card-actions {
     display: flex;
     gap: 10px;
     margin-top: 15px;
 }
 
-.contact-actions .btn {
+.user-card-actions .btn-chat,
+.user-card-actions .btn-add-contact {
     flex: 1;
     padding: 8px 12px;
     font-size: 0.9rem;
+    border: none;
+    border-radius: var(--border-radius-small);
+    cursor: pointer;
+    transition: var(--transition-normal);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.user-card-actions .btn-chat {
+    background: var(--blue-gradient);
+    color: white;
+}
+
+.user-card-actions .btn-add-contact {
+    background: var(--gold-gradient);
+    color: var(--primary-black);
+}
+
+.user-card-actions .btn-chat:hover,
+.user-card-actions .btn-add-contact:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-medium);
 }
 
 /* ==========================================================================
@@ -1058,6 +1097,13 @@ a:hover {
     box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
 }
 
+.record-status {
+    text-align: center;
+    color: var(--gold);
+    font-size: 0.9rem;
+    margin-top: 5px;
+}
+
 /* ==========================================================================
    MURO DE PERFILES
    ========================================================================== */
@@ -1162,6 +1208,26 @@ a:hover {
     line-height: 1.4;
 }
 
+.profile-card .btn-chat {
+    width: 100%;
+    padding: 10px;
+    background: var(--blue-gradient);
+    color: white;
+    border: none;
+    border-radius: var(--border-radius-small);
+    cursor: pointer;
+    transition: var(--transition-normal);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.profile-card .btn-chat:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-medium);
+}
+
 /* ==========================================================================
    PERFIL DE USUARIO
    ========================================================================== */
@@ -1227,6 +1293,85 @@ a:hover {
 
 .avatar-preview:hover .upload-overlay {
     opacity: 1;
+}
+
+/* ==========================================================================
+   HISTORIAL DE CHATS
+   ========================================================================== */
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chat-history-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px;
+    background: rgba(10, 10, 10, 0.8);
+    border: 1px solid var(--gold);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: var(--transition-normal);
+}
+
+.chat-history-item:hover {
+    background: rgba(20, 20, 20, 0.9);
+    transform: translateX(10px);
+    border-color: var(--gold-light);
+}
+
+.chat-history-item .chat-avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 2px solid var(--gold);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: var(--gold);
+}
+
+.chat-info {
+    flex: 1;
+}
+
+.chat-info h4 {
+    color: var(--gold);
+    margin-bottom: 5px;
+}
+
+.chat-info p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.chat-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+}
+
+.chat-time {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.unread-badge {
+    background: var(--blue);
+    color: white;
+    min-width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 600;
 }
 
 /* ==========================================================================
@@ -1617,6 +1762,55 @@ a:hover {
 }
 
 /* ==========================================================================
+   IMAGE MODAL
+   ========================================================================== */
+.image-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: calc(var(--z-overlay) + 300);
+}
+
+.image-modal .modal-content {
+    max-width: 90%;
+    max-height: 90%;
+    position: relative;
+}
+
+.image-modal img {
+    max-width: 100%;
+    max-height: 90vh;
+    border: 3px solid var(--gold);
+    border-radius: 10px;
+}
+
+.image-modal .close-modal {
+    position: absolute;
+    top: -40px;
+    right: -40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--gold);
+    border: none;
+    color: var(--primary-black);
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: var(--transition-normal);
+}
+
+.image-modal .close-modal:hover {
+    transform: scale(1.1);
+    box-shadow: var(--gold-glow);
+}
+
+/* ==========================================================================
    PROGRESS BARS
    ========================================================================== */
 .progress-container {
@@ -1827,160 +2021,6 @@ a:hover {
 }
 
 /* ==========================================================================
-   SCROLLBAR PERSONALIZADA
-   ========================================================================== */
-::-webkit-scrollbar {
-    width: 10px;
-}
-
-::-webkit-scrollbar-track {
-    background: var(--darker-black);
-}
-
-::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, var(--gold), var(--blue));
-    border-radius: 5px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, var(--gold-light), var(--blue-light));
-}
-
-/* ==========================================================================
-   SELECT PERSONALIZADO
-   ========================================================================== */
-select {
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    background: rgba(0, 0, 0, 0.8) url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffd700'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e") no-repeat right 10px center;
-    background-size: 20px;
-    border: 1px solid var(--gold-dark);
-    border-radius: var(--border-radius-small);
-    color: var(--text-primary);
-    padding: 12px 40px 12px 15px;
-    font-size: 1rem;
-    font-family: 'Poppins', sans-serif;
-    cursor: pointer;
-    transition: var(--transition-normal);
-}
-
-select:focus {
-    outline: none;
-    border-color: var(--gold);
-    box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.2);
-}
-
-select option {
-    background: var(--primary-black);
-    color: var(--text-primary);
-    padding: 10px;
-}
-
-/* ==========================================================================
-   TEXTAREA PERSONALIZADO
-   ========================================================================== */
-textarea {
-    resize: vertical;
-    min-height: 100px;
-    font-family: 'Poppins', sans-serif;
-    line-height: 1.5;
-}
-
-textarea.form-control {
-    padding: 12px 15px;
-    line-height: 1.5;
-}
-
-/* ==========================================================================
-   BADGES
-   ========================================================================== */
-.badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 6px;
-    border-radius: 10px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-align: center;
-}
-
-.badge-online {
-    background: var(--online);
-    color: white;
-}
-
-.badge-offline {
-    background: var(--offline);
-    color: white;
-}
-
-.badge-gold {
-    background: var(--gold);
-    color: var(--primary-black);
-}
-
-.badge-blue {
-    background: var(--blue);
-    color: white;
-}
-
-/* ==========================================================================
-   GRADIENTS ANIMADOS
-   ========================================================================== */
-.animated-gradient {
-    background: linear-gradient(-45deg, 
-        var(--gold), 
-        var(--blue), 
-        var(--silver), 
-        var(--gold)
-    );
-    background-size: 400% 400%;
-    animation: gradient 15s ease infinite;
-}
-
-@keyframes gradient {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-}
-
-/* ==========================================================================
-   PWA INSTALL BUTTON
-   ========================================================================== */
-.install-btn {
-    position: fixed;
-    bottom: 30px;
-    left: 30px;
-    padding: 12px 24px;
-    background: linear-gradient(135deg, var(--gold), var(--gold-light));
-    color: var(--primary-black);
-    border: none;
-    border-radius: 25px;
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: var(--shadow-medium);
-    z-index: var(--z-notification);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    transition: var(--transition-normal);
-}
-
-.install-btn:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 25px rgba(255, 215, 0, 0.4);
-}
-
-.install-btn.hidden {
-    display: none;
-}
-
-/* ==========================================================================
    EMPTY STATES
    ========================================================================== */
 .empty-state {
@@ -2007,43 +2047,21 @@ textarea.form-control {
 }
 
 /* ==========================================================================
-   ERROR STATES
+   SCROLLBAR PERSONALIZADA
    ========================================================================== */
-.error-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: var(--offline);
+::-webkit-scrollbar {
+    width: 10px;
 }
 
-.error-state i {
-    font-size: 4rem;
-    color: var(--offline);
-    margin-bottom: 20px;
+::-webkit-scrollbar-track {
+    background: var(--darker-black);
 }
 
-.error-state h3 {
-    color: var(--offline);
-    margin-bottom: 10px;
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--gold), var(--blue));
+    border-radius: 5px;
 }
 
-/* ==========================================================================
-   FINAL STYLES
-   ========================================================================== */
-*:focus {
-    outline: 2px solid var(--gold);
-    outline-offset: 2px;
-}
-
-*:focus:not(:focus-visible) {
-    outline: none;
-}
-
-::selection {
-    background: rgba(255, 215, 0, 0.3);
-    color: white;
-}
-
-::-moz-selection {
-    background: rgba(255, 215, 0, 0.3);
-    color: white;
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--gold-light), var(--blue-light));
 }

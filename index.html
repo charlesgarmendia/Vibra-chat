@@ -2,38 +2,288 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Vibra Chat - Chat en Tiempo Real</title>
     
     <!-- Manifest PWA -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0a0a0a">
     <meta name="description" content="Vibra Chat - Conecta y chatea en tiempo real">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
     <!-- Íconos PWA -->
-    <link rel="icon" href="/icons/vibra-192.png" sizes="192x192">
-    <link rel="apple-touch-icon" href="/icons/vibra-192.png">
+    <link rel="icon" href="/vibra-192.png" sizes="192x192">
+    <link rel="apple-touch-icon" href="/vibra-192.png">
     
     <!-- Estilos -->
     <link rel="stylesheet" href="/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Scripts esenciales -->
-    <script type="module" src="/firebase-config.js"></script>
-    <script src="/monetag-integration.js"></script>
 </head>
-<body>
+<body class="three-d-mode">
     <!-- App Container -->
     <div id="app">
         <!-- Login Screen -->
         <div id="loginScreen" class="screen active">
-            <!-- ... contenido login ... -->
+            <div class="login-container">
+                <div class="logo-section">
+                    <div class="logo-icon">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <h1 class="logo-text">
+                        <span class="gold-text">VIBRA</span> <span class="blue-text">CHAT</span>
+                    </h1>
+                    <p class="tagline">Conecta con el mundo en tiempo real</p>
+                </div>
+                
+                <div class="login-form">
+                    <div class="form-group">
+                        <label for="username">Tu nombre</label>
+                        <input type="text" id="username" class="form-control" placeholder="Ej: Juan Pérez" maxlength="30" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Género</label>
+                        <div class="gender-options">
+                            <label class="gender-option">
+                                <input type="radio" name="gender" value="male" checked>
+                                <div class="gender-icon male">
+                                    <i class="fas fa-mars"></i>
+                                </div>
+                                <span class="gender-label">Masculino</span>
+                            </label>
+                            
+                            <label class="gender-option">
+                                <input type="radio" name="gender" value="female">
+                                <div class="gender-icon female">
+                                    <i class="fas fa-venus"></i>
+                                </div>
+                                <span class="gender-label">Femenino</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <button id="loginBtn" class="btn btn-primary btn-block">
+                        <i class="fas fa-sign-in-alt"></i> Entrar a Vibra Chat
+                    </button>
+                    
+                    <p class="terms-text">
+                        Al ingresar aceptas nuestros <a href="#">Términos y Condiciones</a>
+                    </p>
+                </div>
+            </div>
         </div>
         
         <!-- Main App -->
         <div id="appScreen" class="screen">
-            <!-- Header, Sidebar, Chat, etc. -->
+            <!-- Header -->
+            <header class="app-header">
+                <div class="header-left">
+                    <button id="menuToggle" class="btn-icon">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="app-logo">
+                        <span class="gold-text">VIBRA</span>
+                    </div>
+                </div>
+                
+                <div class="header-center">
+                    <span class="online-indicator">
+                        <i class="fas fa-circle online"></i> <span id="onlineCount">0</span>
+                    </span>
+                </div>
+                
+                <div class="header-right">
+                    <div class="user-avatar profile-pic">
+                        <i class="fas fa-user"></i>
+                    </div>
+                </div>
+            </header>
+            
+            <!-- Sidebar -->
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-header">
+                    <div class="user-profile">
+                        <div class="profile-avatar profile-pic">
+                            <i class="fas fa-user"></i>
+                            <span class="status-indicator online"></span>
+                        </div>
+                        <div class="profile-info">
+                            <h3 id="userName">Usuario</h3>
+                            <p id="userID">ID: cargando...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <nav class="sidebar-nav">
+                    <div class="nav-item" onclick="vibraChat.showSection('contacts')">
+                        <i class="fas fa-users"></i>
+                        <span>Contactos</span>
+                    </div>
+                    <div class="nav-item" onclick="vibraChat.showSection('wall')">
+                        <i class="fas fa-user-friends"></i>
+                        <span>Muro de Perfiles</span>
+                    </div>
+                    <div class="nav-item" onclick="vibraChat.showSection('history')">
+                        <i class="fas fa-history"></i>
+                        <span>Historial</span>
+                        <span class="nav-badge" id="unreadBadge" style="display: none;">0</span>
+                    </div>
+                    <div class="nav-item" onclick="vibraChat.showProfile()">
+                        <i class="fas fa-user-circle"></i>
+                        <span>Mi Perfil</span>
+                    </div>
+                </nav>
+                
+                <div class="sidebar-footer">
+                    <div class="nav-item" onclick="vibraChat.handleLogout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Cerrar Sesión</span>
+                    </div>
+                </div>
+            </aside>
+            
+            <!-- Main Content -->
+            <main class="main-content" id="mainContent">
+                <!-- Contactos Section -->
+                <div id="contactsSection" class="content-section active">
+                    <div class="section-header">
+                        <h2>Usuarios en Línea</h2>
+                        <p>Conecta con nuevos amigos</p>
+                    </div>
+                    <div id="onlineContacts" class="contacts-grid"></div>
+                </div>
+                
+                <!-- Chat Section -->
+                <div id="chatSection" class="content-section">
+                    <div class="chat-section">
+                        <div class="chat-header">
+                            <button id="backToContacts" class="btn-icon">
+                                <i class="fas fa-arrow-left"></i>
+                            </button>
+                            <div class="chat-user-info">
+                                <div class="chat-avatar chat-user-pic">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="chat-user-details">
+                                    <h3 id="chatUserName">Selecciona un chat</h3>
+                                    <p id="chatUserStatus">-</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="chatMessages" class="chat-messages"></div>
+                        
+                        <div class="chat-input-area">
+                            <div class="input-tools">
+                                <button id="imageBtn" class="btn-icon" title="Enviar imagen">
+                                    <i class="fas fa-image"></i>
+                                </button>
+                                <button id="cameraBtn" class="btn-icon" title="Tomar foto">
+                                    <i class="fas fa-camera"></i>
+                                </button>
+                                <button id="audioBtn" class="btn-icon" title="Grabar audio">
+                                    <i class="fas fa-microphone"></i>
+                                </button>
+                            </div>
+                            <textarea id="messageInput" class="message-input" placeholder="Escribe un mensaje..." rows="1"></textarea>
+                            <button id="sendMessageBtn" class="btn-icon">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                        
+                        <div id="recordStatus" class="record-status"></div>
+                    </div>
+                </div>
+                
+                <!-- Muro de Perfiles Section -->
+                <div id="wallSection" class="content-section">
+                    <div class="section-header">
+                        <h2>Muro de Perfiles</h2>
+                        <p>Explora y conecta con usuarios</p>
+                    </div>
+                    <div id="wallProfiles" class="wall-grid"></div>
+                </div>
+                
+                <!-- Historial Section -->
+                <div id="historySection" class="content-section">
+                    <div class="section-header">
+                        <h2>Historial de Chats</h2>
+                        <p>Tus conversaciones recientes</p>
+                    </div>
+                    <div id="chatHistory" class="history-list"></div>
+                </div>
+                
+                <!-- Perfil Section -->
+                <div id="profileSection" class="content-section">
+                    <div class="profile-section">
+                        <div class="section-header">
+                            <h2>Mi Perfil</h2>
+                            <p>Personaliza tu información</p>
+                        </div>
+                        
+                        <div class="profile-edit-form">
+                            <div class="avatar-upload">
+                                <div class="avatar-preview">
+                                    <i class="fas fa-user"></i>
+                                    <div class="upload-overlay">
+                                        <i class="fas fa-camera"></i>
+                                    </div>
+                                </div>
+                                <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
+                                <p>Haz clic para cambiar foto</p>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="profileName">Nombre</label>
+                                <input type="text" id="profileName" class="form-control" maxlength="30">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="profileBio">Biografía</label>
+                                <textarea id="profileBio" class="form-control" rows="3" maxlength="150"></textarea>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="profileStatus">Estado</label>
+                                <select id="profileStatus" class="form-control">
+                                    <option value="online">En línea</option>
+                                    <option value="away">Ausente</option>
+                                    <option value="busy">Ocupado</option>
+                                </select>
+                            </div>
+                            
+                            <button id="saveProfileBtn" class="btn btn-primary btn-block">
+                                <i class="fas fa-save"></i> Guardar Cambios
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </main>
+            
+            <!-- Modos 3D/4D -->
+            <div class="mode-toggle">
+                <button id="toggle3D" class="mode-btn active">
+                    <i class="fas fa-cube"></i> 3D
+                </button>
+                <button id="toggle4D" class="mode-btn">
+                    <i class="fas fa-cubes"></i> 4D
+                </button>
+            </div>
+        </div>
+        
+        <!-- Ad Overlay -->
+        <div id="adOverlay" class="ad-overlay">
+            <div class="ad-container">
+                <h2 class="ad-title">Publicidad</h2>
+                <div class="ad-content">
+                    <p>Espacio publicitario</p>
+                    <!-- Aquí se cargará el anuncio de Monetag -->
+                </div>
+                <button id="closeAdBtn" class="btn btn-primary">Cerrar Publicidad</button>
+                <p class="ad-note">La publicidad nos ayuda a mantener el servicio gratis</p>
+            </div>
         </div>
         
         <!-- Loader Global -->
@@ -47,12 +297,13 @@
     </div>
     
     <!-- Scripts de la app -->
+    <script src="/monetag-integration.js"></script>
     <script type="module" src="app.js"></script>
     <script>
         // Registrar Service Worker
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.service-Worker.register('service-worker.js')
+                navigator.serviceWorker.register('/service-worker.js')
                     .then(reg => console.log('SW registrado:', reg))
                     .catch(err => console.log('Error SW:', err));
             });
@@ -85,6 +336,11 @@
             
             document.body.appendChild(installBtn);
         }
+        
+        // Inicializar preview de avatar
+        document.querySelector('.avatar-preview')?.addEventListener('click', () => {
+            document.getElementById('avatarUpload')?.click();
+        });
     </script>
 </body>
 </html>

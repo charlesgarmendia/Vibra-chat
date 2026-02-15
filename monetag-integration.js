@@ -26,36 +26,36 @@
             
             window.monetag.cmd.push(function() {
                 // Configuración avanzada
-                monetag.init({
-                    id: MONETAG_ID,
-                    type: 'popunder',
-                    position: 'right',
-                    style: {
-                        width: '728px',
-                        height: '90px',
-                        backgroundColor: '#0a0a0a',
-                        borderColor: '#ffd700',
-                        textColor: '#ffffff'
-                    },
-                    onLoad: function() {
-                        console.log('Monetag cargado correctamente');
-                    },
-                    onDisplay: function() {
-                        console.log('Anuncio mostrado');
-                        // Emitir evento
-                        document.dispatchEvent(new CustomEvent('monetag-ad-shown'));
-                    },
-                    onClose: function() {
-                        console.log('Anuncio cerrado');
-                        // Emitir evento
-                        document.dispatchEvent(new CustomEvent('monetag-ad-closed'));
-                    },
-                    onError: function(error) {
-                        console.error('Error Monetag:', error);
-                    }
-                });
-                
-                monetag.load();
+                if (typeof monetag !== 'undefined' && monetag.init) {
+                    monetag.init({
+                        id: MONETAG_ID,
+                        type: 'popunder',
+                        position: 'right',
+                        style: {
+                            width: '728px',
+                            height: '90px',
+                            backgroundColor: '#0a0a0a',
+                            borderColor: '#ffd700',
+                            textColor: '#ffffff'
+                        },
+                        onLoad: function() {
+                            console.log('Monetag cargado correctamente');
+                        },
+                        onDisplay: function() {
+                            console.log('Anuncio mostrado');
+                            document.dispatchEvent(new CustomEvent('monetag-ad-shown'));
+                        },
+                        onClose: function() {
+                            console.log('Anuncio cerrado');
+                            document.dispatchEvent(new CustomEvent('monetag-ad-closed'));
+                        },
+                        onError: function(error) {
+                            console.error('Error Monetag:', error);
+                        }
+                    });
+                    
+                    monetag.load();
+                }
             });
             
             return true;
@@ -75,7 +75,6 @@
                 return;
             }
             
-            // Configurar listener para cuando se cierre el anuncio
             const adClosedHandler = () => {
                 document.removeEventListener('monetag-ad-closed', adClosedHandler);
                 resolve();
@@ -83,16 +82,22 @@
             
             document.addEventListener('monetag-ad-closed', adClosedHandler);
             
-            // Mostrar anuncio
-            window.monetag.cmd.push(function() {
-                monetag.display();
-            });
+            if (window.monetag.cmd) {
+                window.monetag.cmd.push(function() {
+                    if (typeof monetag !== 'undefined' && monetag.display) {
+                        monetag.display();
+                    } else {
+                        resolve();
+                    }
+                });
+            } else {
+                resolve();
+            }
             
-            // Timeout por seguridad
             setTimeout(() => {
                 document.removeEventListener('monetag-ad-closed', adClosedHandler);
                 resolve();
-            }, 10000); // 10 segundos máximo
+            }, 10000);
         });
     }
     
@@ -100,13 +105,11 @@
     window.MonetagIntegration = {
         init: initMonetag,
         showAd: showAd,
-        isLoaded: () => !!window.monetag
+        isLoaded: () => !!(window.monetag && typeof monetag !== 'undefined')
     };
     
-    // Auto-inicializar cuando el DOM esté listo
     document.addEventListener('DOMContentLoaded', () => {
-        // Solo inicializar si no estamos en localhost
-        if (!window.location.hostname.includes('localhost')) {
+        if (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
             initMonetag();
         }
     });

@@ -1,12 +1,12 @@
 // Sistema REAL de subida de archivos a Firebase Storage
-import { storage, storageRef, uploadBytesResumable, getDownloadURL } from './firebase-config.js';
+import { storage, storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from './firebase-config.js';
 
 class FileUploader {
     constructor() {
         this.maxFileSize = 10 * 1024 * 1024; // 10MB
         this.allowedTypes = {
-            image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-            audio: ['audio/mpeg', 'audio/wav', 'audio/ogg'],
+            image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'],
+            audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp3'],
             video: ['video/mp4', 'video/webm', 'video/ogg']
         };
     }
@@ -14,27 +14,22 @@ class FileUploader {
     async uploadFile(file, userId, type = 'image') {
         return new Promise(async (resolve, reject) => {
             try {
-                // Validar archivo
                 if (!this.validateFile(file, type)) {
                     reject(new Error(`Tipo de archivo no permitido o excede ${this.maxFileSize / 1024 / 1024}MB`));
                     return;
                 }
 
-                // Comprimir imagen si es necesario
                 let fileToUpload = file;
-                if (type === 'image' && file.size > 1024 * 1024) { // > 1MB
+                if (type === 'image' && file.size > 1024 * 1024) {
                     fileToUpload = await this.compressImage(file);
                 }
 
-                // Crear nombre único
                 const timestamp = Date.now();
                 const randomId = Math.random().toString(36).substring(7);
-                const fileName = `${type}s/${userId}/${timestamp}_${randomId}_${file.name}`;
+                const fileName = `${type}s/${userId}/${timestamp}_${randomId}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
                 
-                // Referencia en Storage
                 const fileRef = storageRef(storage, fileName);
                 
-                // Metadata
                 const metadata = {
                     contentType: file.type,
                     customMetadata: {
@@ -44,16 +39,13 @@ class FileUploader {
                     }
                 };
 
-                // Subir archivo
                 const uploadTask = uploadBytesResumable(fileRef, fileToUpload, metadata);
                 
-                // Monitorear progreso
                 uploadTask.on('state_changed',
                     (snapshot) => {
                         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
                         console.log(`Subiendo: ${progress}%`);
                         
-                        // Emitir evento de progreso
                         const event = new CustomEvent('upload-progress', {
                             detail: { progress, fileName: file.name }
                         });
@@ -65,10 +57,8 @@ class FileUploader {
                     },
                     async () => {
                         try {
-                            // Obtener URL de descarga
                             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
                             
-                            // Devolver información del archivo
                             resolve({
                                 url: downloadURL,
                                 name: file.name,
@@ -90,12 +80,10 @@ class FileUploader {
     }
 
     validateFile(file, type) {
-        // Tamaño
         if (file.size > this.maxFileSize) {
             return false;
         }
         
-        // Tipo
         if (!this.allowedTypes[type]?.includes(file.type)) {
             return false;
         }
@@ -116,7 +104,6 @@ class FileUploader {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     
-                    // Calcular nuevas dimensiones (máx 1200px)
                     let width = img.width;
                     let height = img.height;
                     const maxSize = 1200;
@@ -132,10 +119,8 @@ class FileUploader {
                     canvas.width = width;
                     canvas.height = height;
                     
-                    // Dibujar imagen redimensionada
                     ctx.drawImage(img, 0, 0, width, height);
                     
-                    // Convertir a Blob con calidad 80%
                     canvas.toBlob((blob) => {
                         resolve(new File([blob], file.name, {
                             type: 'image/jpeg',
@@ -160,13 +145,9 @@ class FileUploader {
 
     async uploadAvatar(file, userId) {
         try {
-            // Redimensionar avatar a 300x300
             const resizedAvatar = await this.resizeAvatar(file, 300, 300);
-            
-            // Subir avatar
             const avatarInfo = await this.uploadFile(resizedAvatar, userId, 'image');
             
-            // Crear versión miniatura (100x100)
             const thumbnail = await this.resizeAvatar(file, 100, 100);
             const thumbnailInfo = await this.uploadFile(thumbnail, userId, 'image');
             
@@ -196,7 +177,6 @@ class FileUploader {
                     
                     const ctx = canvas.getContext('2d');
                     
-                    // Dibujar con relleno y recorte centrado
                     const scale = Math.max(width / img.width, height / img.height);
                     const x = (width - img.width * scale) / 2;
                     const y = (height - img.height * scale) / 2;
@@ -213,36 +193,6 @@ class FileUploader {
         });
     }
 
-    // Generar vista previa de video
-    async generateVideoThumbnail(videoFile) {
-        return new Promise((resolve) => {
-            const video = document.createElement('video');
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            video.src = URL.createObjectURL(videoFile);
-            video.crossOrigin = 'anonymous';
-            
-            video.onloadeddata = () => {
-                // Capturar frame en 2 segundos
-                video.currentTime = 2;
-            };
-            
-            video.onseeked = () => {
-                canvas.width = 320;
-                canvas.height = 180;
-                ctx.drawImage(video, 0, 0, 320, 180);
-                
-                canvas.toBlob((blob) => {
-                    resolve(blob);
-                }, 'image/jpeg');
-                
-                URL.revokeObjectURL(video.src);
-            };
-        });
-    }
-
-    // Grabar audio
     async startAudioRecording() {
         return new Promise(async (resolve, reject) => {
             try {
@@ -255,10 +205,14 @@ class FileUploader {
                 };
                 
                 mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    const audioFile = new File([audioBlob], 'audio-message.wav', {
-                        type: 'audio/wav'
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioFile = new File([audioBlob], 'audio-message.webm', {
+                        type: 'audio/webm'
                     });
+                    
+                    // Añadir método export al mediaRecorder
+                    mediaRecorder.export = () => audioFile;
+                    
                     resolve(audioFile);
                     stream.getTracks().forEach(track => track.stop());
                 };

@@ -1,16 +1,16 @@
 {
   "short_name": "Vibra Chat",
   "name": "Vibra Chat - Chat en Tiempo Real",
-  "description": "Conecta y chatea con tus amigos en tiempo real con Vibra Chat.",
+  "description": "Conecta y chatea con tus amigos en tiempo real con Vibra Chat. Mensajes instantáneos con estilo único.",
   "icons": [
     {
-      "src": "/icons/vibra-192.png",
+      "src": "/vibra-192.png",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/vibra-512.png",
+      "src": "/vibra-512.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any"
